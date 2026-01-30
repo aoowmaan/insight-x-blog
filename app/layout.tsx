@@ -2,7 +2,7 @@ import './globals.css'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'INSIGHT.X',
+  title: 'Report_X',
   description: 'Security & Insight Archive',
   // 👇 여기 주목! 구글과 네이버를 동시에 설정하는 법
   verification: {

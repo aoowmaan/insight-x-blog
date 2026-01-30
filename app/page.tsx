@@ -10,7 +10,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_zXsjrYxWjeOaFrhdFMtG2Q_KSJYEJha'
 );
 
-// 📅 캘린더 모달 컴포넌트 (메인 페이지 내부 정의)
+// 📅 캘린더 모달 (한글화 완료)
 function CalendarModal({ memos, onClose }: { memos: any[], onClose: () => void }) {
   const today = new Date();
   const [currentDate, setCurrentDate] = useState(today);
@@ -24,7 +24,6 @@ function CalendarModal({ memos, onClose }: { memos: any[], onClose: () => void }
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   const blanks = Array.from({ length: firstDay }, (_, i) => i);
 
-  // 해당 날짜에 작성된 글 필터링
   const getPostsForDay = (day: number) => {
     return memos.filter(m => {
       const d = new Date(m.created_at);
@@ -39,13 +38,13 @@ function CalendarModal({ memos, onClose }: { memos: any[], onClose: () => void }
       <div className="bg-white text-black p-10 rounded-[3rem] shadow-2xl max-w-lg w-full">
         <div className="flex justify-between items-center mb-8">
           <h2 className="text-3xl font-black italic tracking-tighter">
-            {currentDate.getFullYear()}.{currentDate.getMonth() + 1} ARCHIVE
+            {currentDate.getFullYear()}년 {currentDate.getMonth() + 1}월의 기록
           </h2>
           <button onClick={onClose} className="text-2xl hover:rotate-90 transition-transform">✕</button>
         </div>
         
         <div className="grid grid-cols-7 gap-2 mb-4 text-center font-bold text-gray-400 text-xs">
-          {['SUN','MON','TUE','WED','THU','FRI','SAT'].map(d => <div key={d}>{d}</div>)}
+          {['일','월','화','수','목','금','토'].map(d => <div key={d}>{d}</div>)}
         </div>
         
         <div className="grid grid-cols-7 gap-2">
@@ -58,7 +57,6 @@ function CalendarModal({ memos, onClose }: { memos: any[], onClose: () => void }
                 <span className="font-black text-sm">{day}</span>
                 {hasPost && <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full mt-1"></div>}
                 
-                {/* 툴팁: 마우스 올리면 글 제목 표시 */}
                 {hasPost && (
                   <div className="absolute bottom-full mb-2 hidden group-hover:block bg-black text-white text-[10px] p-3 rounded-xl whitespace-nowrap z-20 shadow-xl border border-gray-700">
                     {posts.map(p => <div key={p.id} className="mb-1 last:mb-0">• {p.title}</div>)}
@@ -70,15 +68,15 @@ function CalendarModal({ memos, onClose }: { memos: any[], onClose: () => void }
         </div>
         
         <div className="mt-8 flex justify-between">
-          <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))} className="text-xs font-bold text-gray-400 hover:text-black transition-colors">◀ PREV MONTH</button>
-          <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))} className="text-xs font-bold text-gray-400 hover:text-black transition-colors">NEXT MONTH ▶</button>
+          <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))} className="text-xs font-bold text-gray-400 hover:text-black transition-colors">◀ 지난달</button>
+          <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))} className="text-xs font-bold text-gray-400 hover:text-black transition-colors">다음달 ▶</button>
         </div>
       </div>
     </div>
   );
 }
 
-export default function FullMainPageFinalV8() {
+export default function FullMainPageKoreanFinal() {
   const [isMounted, setIsMounted] = useState(false);
   const isTracked = useRef(false);
   
@@ -87,6 +85,9 @@ export default function FullMainPageFinalV8() {
   const [drafts, setDrafts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [selectedCat, setSelectedCat] = useState('전체');
+  
+  // 🔔 [NEW] 새 글 알림 상태
+  const [hasNewPost, setHasNewPost] = useState(false);
   
   // ⚙️ 설정 상태
   const [config, setConfig] = useState({ hot_threshold: 5, notice_text: '' });
@@ -119,16 +120,23 @@ export default function FullMainPageFinalV8() {
 
   const router = useRouter();
 
-  // ✅ 1. 초기화 및 IP 추적
+  // ✅ 1. 초기화, IP 추적, 새 글 확인
   useEffect(() => {
     setIsMounted(true);
     
+    // (1) IP 추적 (관리자 구분 로직 추가)
     const trackVisit = async () => {
       if (isTracked.current) return;
       try {
         const res = await fetch('https://api.ipify.org?format=json');
         const data = await res.json();
-        const userIp = data.ip || 'Unknown';
+        let userIp = data.ip || 'Unknown';
+
+        // 👑 관리자 여부 체크
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          userIp = `${userIp} (👑 관리자)`;
+        }
 
         await supabase.from('visits').insert([
           { 
@@ -143,6 +151,31 @@ export default function FullMainPageFinalV8() {
       }
     };
     trackVisit();
+
+    // (2) 🔔 새 글 알림 체크 (소설 카테고리)
+    const checkNewPost = async () => {
+      const { data } = await supabase
+        .from('memos')
+        .select('created_at')
+        .eq('category_name', '소설') // '소설' 카테고리만 감지 (필요시 제거 가능)
+        .eq('is_draft', false)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (data) {
+        const lastVisit = localStorage.getItem('last_visit_time');
+        const latestPostTime = new Date(data.created_at).getTime();
+
+        // 마지막 방문 기록이 없거나, 방문 후 새 글이 올라왔다면 알림 ON
+        if (!lastVisit || latestPostTime > Number(lastVisit)) {
+          setHasNewPost(true);
+        }
+      }
+      // 현재 시간을 마지막 방문 시간으로 저장 (다음 방문 비교용)
+      localStorage.setItem('last_visit_time', new Date().getTime().toString());
+    };
+    checkNewPost();
 
     const handleScroll = () => {
       if (window.scrollY > 300) setShowTopBtn(true);
@@ -200,11 +233,10 @@ export default function FullMainPageFinalV8() {
     try {
       const { data: cats } = await supabase.from('categories').select('*');
       
-      // 🚨 댓글 카운트 제거 (요청사항 반영) + 삭제된 글 제외 (deleted_at is null)
       let query = supabase.from('memos')
         .select('*') 
         .eq('is_draft', false)
-        .is('deleted_at', null) // 휴지통에 있는 글은 안 가져옴
+        .is('deleted_at', null)
         .order('created_at', { ascending: false });
       
       if (!isUser) {
@@ -215,12 +247,11 @@ export default function FullMainPageFinalV8() {
       const { data: list, error } = await query;
       if (error) console.error("Fetch Error:", error);
 
-      // 임시저장 목록 (관리자만)
       if (isUser) {
         const { data: draftList } = await supabase.from('memos')
           .select('*')
           .eq('is_draft', true)
-          .is('deleted_at', null) // 임시저장 중에서도 삭제 안 된 것만
+          .is('deleted_at', null)
           .order('created_at', { ascending: false });
         setDrafts(draftList || []);
       } else {
@@ -250,7 +281,7 @@ export default function FullMainPageFinalV8() {
   };
 
   const handleLogout = async () => {
-    if(!confirm("로그아웃 하시겠습니까?")) return;
+    if(!confirm("퇴근하시겠습니까?")) return;
     try {
       await supabase.auth.signOut();
       localStorage.clear(); 
@@ -343,7 +374,7 @@ export default function FullMainPageFinalV8() {
   const navBg = isDark ? 'bg-black/80 border-[#333]' : 'bg-white/80 border-gray-100';
   const cardBg = isDark ? 'bg-[#1a1a1a] border-[#333]' : 'bg-gray-50 border-gray-100';
 
-  if (!isMounted) return <div className="min-h-screen bg-black flex items-center justify-center text-green-500 font-mono">SYSTEM BOOTING...</div>;
+  if (!isMounted) return <div className="min-h-screen bg-black flex items-center justify-center text-white font-mono">시스템 접속 중...</div>;
 
   return (
     <div className={`min-h-screen font-sans pb-40 relative overflow-x-hidden transition-colors duration-500 ${themeBg} ${themeText}`}>
@@ -354,17 +385,29 @@ export default function FullMainPageFinalV8() {
         <span className="text-xs font-bold tracking-wide">{toast.msg}</span>
       </div>
 
-      {/* 📢 공지사항 */}
-      {config.notice_text && (
-        <div className="bg-indigo-600 text-white text-center py-3 text-[10px] font-black tracking-widest uppercase relative z-[120] animate-in slide-in-from-top">
-          📢 NOTICE : {config.notice_text}
+      {/* 🚀 [NEW] 새 글 알림 팝업 */}
+      {hasNewPost && (
+        <div 
+          onClick={() => { setHasNewPost(false); setSelectedCat('소설'); }}
+          className="fixed top-24 right-6 md:right-12 z-[200] bg-indigo-600 text-white px-5 py-3 rounded-2xl shadow-2xl animate-bounce cursor-pointer hover:bg-indigo-500 transition-colors flex items-center gap-2"
+        >
+          <span className="text-lg">🚀</span>
+          <span className="text-xs font-black">새 연재가 도착했습니다!</span>
+          <button onClick={(e) => { e.stopPropagation(); setHasNewPost(false); }} className="ml-2 text-white/50 hover:text-white">✕</button>
         </div>
       )}
 
-      {/* 1. 마퀴 (티커) */}
+      {/* 📢 공지사항 */}
+      {config.notice_text && (
+        <div className="bg-indigo-600 text-white text-center py-3 text-[10px] font-black tracking-widest uppercase relative z-[120] animate-in slide-in-from-top">
+          📢 주요 소식 : {config.notice_text}
+        </div>
+      )}
+
+      {/* 1. 마퀴 (티커) - 한글화 */}
       <div className="bg-black text-white py-2 overflow-hidden whitespace-nowrap z-[110] relative text-[9px] font-black tracking-[0.3em] uppercase">
         <div className="inline-block animate-marquee">
-          {memos.length > 0 ? memos.map(m => ` • STATUS: ${m.title} `).join(' ') : " • SYSTEM READY • "}
+          {memos.length > 0 ? memos.map(m => ` • 최신 기록: ${m.title} `).join(' ') : " • 시스템 준비 완료 • "}
         </div>
       </div>
 
@@ -374,10 +417,10 @@ export default function FullMainPageFinalV8() {
           <div className="flex items-center gap-6 md:gap-16">
             <h1 className="text-2xl md:text-3xl font-black italic tracking-tighter cursor-pointer hover:text-indigo-600 transition-colors"
                 onClick={() => window.location.reload()}>
-              인사이트<span className="text-indigo-600">.X</span>
+              Report<span className="text-indigo-600">_X</span>
             </h1>
             <div className="hidden md:flex gap-10 items-center border-l border-gray-100 pl-16">
-              <button onClick={() => router.push('/nexus')} className="text-[11px] font-black tracking-[0.2em] text-gray-400 hover:text-indigo-600 transition-all">🌌 지식 성운</button>
+              <button onClick={() => router.push('/nexus')} className="text-[11px] font-black tracking-[0.2em] text-gray-400 hover:text-indigo-600 transition-all">🌌 세계관 지도</button>
             </div>
           </div>
 
@@ -386,16 +429,16 @@ export default function FullMainPageFinalV8() {
               {isDark ? '☀️' : '🌙'}
             </button>
             <div className="relative group hidden md:block">
-              <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="검색..." className={`border-none rounded-full px-10 py-2.5 text-[11px] font-bold w-64 focus:w-80 transition-all outline-none ${isDark ? 'bg-[#222] text-white placeholder-gray-500' : 'bg-gray-50 text-black placeholder-gray-400'}`} />
+              <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="기록 검색..." className={`border-none rounded-full px-10 py-2.5 text-[11px] font-bold w-64 focus:w-80 transition-all outline-none ${isDark ? 'bg-[#222] text-white placeholder-gray-500' : 'bg-gray-50 text-black placeholder-gray-400'}`} />
             </div>
             
             {isAdmin ? (
                <div className="flex items-center gap-4">
-                 <button onClick={() => router.push('/admin')} className="bg-indigo-600 text-white px-4 py-2 md:px-6 md:py-2.5 rounded-full text-[9px] md:text-[10px] font-black">관리</button>
-                 <button onClick={handleLogout} className="hidden md:block text-[10px] font-black text-red-500">로그아웃</button>
+                 <button onClick={() => router.push('/admin')} className="bg-indigo-600 text-white px-4 py-2 md:px-6 md:py-2.5 rounded-full text-[9px] md:text-[10px] font-black">관리실</button>
+                 <button onClick={handleLogout} className="hidden md:block text-[10px] font-black text-red-500">퇴근</button>
                </div>
             ) : (
-               <button onClick={() => setShowLogin(true)} className="hidden md:block text-[10px] font-bold opacity-50 hover:opacity-100">LOGIN</button>
+               <button onClick={() => setShowLogin(true)} className="hidden md:block text-[10px] font-bold opacity-50 hover:opacity-100">로그인</button>
             )}
           </div>
         </div>
@@ -404,7 +447,11 @@ export default function FullMainPageFinalV8() {
       {/* 3. 카테고리 필터 */}
       <div className="max-w-[1800px] mx-auto px-6 md:px-12 py-6 md:py-10 flex gap-4 md:gap-6 overflow-x-auto no-scrollbar">
         {['전체', ...categories.map(c => c.name)].map(c => (
-          <button key={c} onClick={() => setSelectedCat(c)} className={`px-4 py-2 md:px-6 md:py-2 rounded-full text-[9px] md:text-[10px] font-black transition-all border shrink-0 ${selectedCat === c ? 'bg-indigo-600 text-white border-indigo-600' : `${isDark ? 'bg-[#222] border-[#333] text-gray-400' : 'bg-white border-gray-100 text-gray-500'} hover:text-indigo-500`}`}>{c}</button>
+          <button key={c} onClick={() => setSelectedCat(c)} className={`px-4 py-2 md:px-6 md:py-2 rounded-full text-[9px] md:text-[10px] font-black transition-all border shrink-0 ${selectedCat === c ? 'bg-indigo-600 text-white border-indigo-600' : `${isDark ? 'bg-[#222] border-[#333] text-gray-400' : 'bg-white border-gray-100 text-gray-500'} hover:text-indigo-500`}`}>
+            {c}
+            {/* 알림 배지: 소설 카테고리에 새 글 있으면 점 표시 */}
+            {hasNewPost && c === '소설' && <span className="ml-2 w-2 h-2 bg-red-500 rounded-full inline-block animate-pulse"></span>}
+          </button>
         ))}
       </div>
 
@@ -416,7 +463,7 @@ export default function FullMainPageFinalV8() {
             <div className={`p-8 md:p-16 rounded-[2rem] md:rounded-[4rem] border-2 shadow-2xl transition-colors ${isDark ? 'bg-[#1a1a1a] border-[#333]' : 'bg-gray-50 border-white'}`}>
               <div className="flex justify-between items-center mb-8 md:mb-12">
                 <h3 className={`text-xl md:text-3xl font-black italic tracking-tighter ${themeText}`}>
-                  {editingId ? '📝 수정 모드' : '✨ 관리자 기록 모드'}
+                  {editingId ? '📝 기록 수정' : '✨ 새 기록 작성'}
                 </h3>
                 {drafts.length > 0 && (
                   <div className="flex gap-2 overflow-x-auto max-w-[150px] md:max-w-md no-scrollbar">
@@ -435,29 +482,29 @@ export default function FullMainPageFinalV8() {
                 ))}
               </div>
               
-              <input value={title} onChange={(e) => setTitle(e.target.value)} className={`w-full bg-transparent text-2xl md:text-4xl font-black border-none focus:ring-0 mb-6 md:mb-8 outline-none ${themeText} ${isDark ? 'placeholder:text-gray-600' : 'placeholder:text-gray-300'}`} placeholder="제목" />
-              <textarea value={content} onChange={(e) => setContent(e.target.value)} className={`w-full h-32 md:h-40 bg-transparent text-lg md:text-xl font-medium border-none focus:ring-0 resize-none outline-none ${themeText} ${isDark ? 'placeholder:text-gray-700' : 'placeholder:text-gray-300'}`} placeholder="내용..." />
+              <input value={title} onChange={(e) => setTitle(e.target.value)} className={`w-full bg-transparent text-2xl md:text-4xl font-black border-none focus:ring-0 mb-6 md:mb-8 outline-none ${themeText} ${isDark ? 'placeholder:text-gray-600' : 'placeholder:text-gray-300'}`} placeholder="제목을 입력하세요" />
+              <textarea value={content} onChange={(e) => setContent(e.target.value)} className={`w-full h-32 md:h-40 bg-transparent text-lg md:text-xl font-medium border-none focus:ring-0 resize-none outline-none ${themeText} ${isDark ? 'placeholder:text-gray-700' : 'placeholder:text-gray-300'}`} placeholder="내용을 입력하세요..." />
               
               <div className="flex gap-4 mb-6 items-center bg-black/5 p-4 rounded-2xl w-fit">
-                <input value={seriesName} onChange={(e) => setSeriesName(e.target.value)} placeholder="시리즈 이름 (예: 소설)" className={`bg-transparent border-b border-gray-300 py-2 w-40 text-xs font-bold outline-none ${themeText}`} />
+                <input value={seriesName} onChange={(e) => setSeriesName(e.target.value)} placeholder="시리즈명 (예: 소설)" className={`bg-transparent border-b border-gray-300 py-2 w-40 text-xs font-bold outline-none ${themeText}`} />
                 <input type="number" value={seriesOrder} onChange={(e) => setSeriesOrder(Number(e.target.value))} placeholder="순서" className={`bg-transparent border-b border-gray-300 py-2 w-16 text-xs font-bold outline-none ${themeText}`} />
               </div>
 
               <div className="flex flex-col md:flex-row md:items-center gap-4 mb-8 bg-black/5 p-4 rounded-2xl w-fit">
-                <span className={`text-[10px] font-bold ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>📅 예약(선택):</span>
+                <span className={`text-[10px] font-bold ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>📅 예약 발행:</span>
                 <input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className={`bg-transparent text-[11px] font-bold outline-none ${themeText}`} />
               </div>
 
               <div className="flex flex-col md:flex-row justify-between items-center mt-6 pt-6 md:mt-8 md:pt-8 border-t border-gray-200/20 gap-4">
                 <label className="w-full md:w-auto cursor-pointer text-[10px] font-black text-gray-400 hover:text-indigo-500 bg-white/10 px-6 py-4 rounded-3xl transition-all border border-gray-200/20 text-center">
                   <input type="file" onChange={(e) => setImageFile(e.target.files?.[0] || null)} className="hidden" />
-                  {imageFile ? "✅ 준비됨" : "📷 미디어"}
+                  {imageFile ? "✅ 파일 준비됨" : "📷 이미지 첨부"}
                 </label>
                 <div className="flex gap-2 md:gap-4 w-full md:w-auto">
                   {editingId && <button onClick={() => { setEditingId(null); setTitle(''); setContent(''); }} className="flex-1 md:flex-none bg-red-100 text-red-500 px-6 py-4 rounded-[2rem] font-black text-xs">취소</button>}
-                  <button onClick={() => savePost(true)} disabled={loading} className="flex-1 md:flex-none bg-gray-200 text-gray-600 px-6 py-4 md:px-8 md:py-5 rounded-[2.5rem] font-black text-xs hover:bg-gray-300 transition-all">임시저장</button>
+                  <button onClick={() => savePost(true)} disabled={loading} className="flex-1 md:flex-none bg-gray-200 text-gray-600 px-6 py-4 md:px-8 md:py-5 rounded-[2.5rem] font-black text-xs hover:bg-gray-300 transition-all">작성 중 저장</button>
                   <button onClick={() => savePost(false)} disabled={loading} className="flex-[2] md:flex-none bg-black text-white px-8 py-4 md:px-12 md:py-5 rounded-[2.5rem] font-black text-xs uppercase hover:bg-indigo-600 transition-all shadow-xl">
-                    {editingId ? '수정' : '발행'}
+                    {editingId ? '수정 완료' : '발행하기'}
                   </button>
                 </div>
               </div>
@@ -465,26 +512,43 @@ export default function FullMainPageFinalV8() {
           </section>
         )}
 
-        {/* 5. 플로팅 버튼들 (캘린더 / 랜덤 / 탑) */}
-        <div className="fixed bottom-6 right-6 md:bottom-10 md:right-10 z-50 flex flex-col gap-4 items-end">
+        {/* 5. 플로팅 버튼들 (수정됨: 모바일 넥서스 버튼 추가) */}
+        <div className="fixed bottom-6 right-6 md:bottom-10 md:right-10 z-50 flex flex-col gap-3 items-end">
           {showTopBtn && (
             <button 
               onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-              className="w-12 h-12 bg-white text-black border border-gray-200 rounded-full shadow-lg flex items-center justify-center text-lg hover:bg-gray-100 transition-all"
+              className="w-10 h-10 md:w-12 md:h-12 bg-white text-black border border-gray-200 rounded-full shadow-lg flex items-center justify-center text-lg hover:bg-gray-100 transition-all"
             >
               ⬆️
             </button>
           )}
           
-          {/* [NEW] 캘린더 버튼 */}
+          {/* 🌌 [NEW] 넥서스 버튼 (모바일/PC 모두 표시) */}
           <button 
-            onClick={() => setShowCalendar(true)} 
-            className="px-6 py-3 bg-black text-white rounded-full shadow-2xl font-black text-xs hover:scale-105 transition-all flex items-center gap-2"
+            onClick={() => router.push('/nexus')} 
+            className="w-12 h-12 md:w-auto md:h-auto md:px-6 md:py-3 bg-indigo-600 text-white rounded-full shadow-2xl font-black text-xs hover:scale-105 transition-all flex items-center justify-center gap-2"
+            title="세계관 지도 (넥서스)"
           >
-            📅 CALENDAR
+            <span className="text-xl md:text-sm">🌌</span>
+            <span className="hidden md:inline">세계관 지도</span>
           </button>
           
-          <button onClick={handleRandomDive} className="w-16 h-16 bg-indigo-600 text-white rounded-full shadow-2xl flex items-center justify-center text-2xl hover:rotate-180 transition-transform duration-700 hover:bg-black" title="랜덤 다이브">🎲</button>
+          <button 
+            onClick={() => setShowCalendar(true)} 
+            className="w-12 h-12 md:w-auto md:h-auto md:px-6 md:py-3 bg-black text-white rounded-full shadow-2xl font-black text-xs hover:scale-105 transition-all flex items-center justify-center gap-2"
+            title="연재 달력"
+          >
+            <span className="text-xl md:text-sm">📅</span>
+            <span className="hidden md:inline">연재 달력</span>
+          </button>
+          
+          <button 
+            onClick={handleRandomDive} 
+            className="w-14 h-14 md:w-16 md:h-16 bg-white text-black border-2 border-black rounded-full shadow-2xl flex items-center justify-center text-2xl hover:rotate-180 transition-transform duration-700 hover:bg-black hover:text-white hover:border-white" 
+            title="랜덤 글 보기"
+          >
+            🎲
+          </button>
         </div>
 
         {/* 6. 글 목록 (카드) */}
@@ -493,16 +557,14 @@ export default function FullMainPageFinalV8() {
             <article key={item.id} onClick={() => router.push(`/post/${item.id}`)} className="group cursor-pointer">
               <div className={`aspect-[4/5] overflow-hidden rounded-[2.5rem] md:rounded-[4rem] mb-6 md:mb-10 relative transition-all duration-700 group-hover:-translate-y-4 group-hover:shadow-2xl ${cardBg}`}>
                 
-                {/* 👁️ 조회수, 🔥 HOT 배지 (댓글 수는 삭제됨) */}
+                {/* 👁️ 조회수, 🔥 화제 배지 */}
                 <div className="absolute top-6 right-6 md:top-8 md:right-8 z-20 flex flex-col items-end gap-2">
-                   {/* 조회수만 표시 */}
                    <div className="bg-black/40 backdrop-blur-md text-white px-3 py-1 rounded-full text-[9px] font-bold border border-white/10 flex items-center gap-1">
                      👁️ {item.views || 0}
                    </div>
-                   {/* HOT 배지 */}
                    {(item.likes || 0) >= config.hot_threshold && (
                      <div className="bg-red-500 text-white px-3 py-1 rounded-full text-[9px] font-black border border-red-400 animate-pulse">
-                       🔥 HOT
+                       🔥 화제
                      </div>
                    )}
                 </div>
@@ -510,7 +572,7 @@ export default function FullMainPageFinalV8() {
                 {/* 시리즈 표시 */}
                 {item.series_name && (
                    <div className="absolute top-6 left-6 md:top-8 md:left-8 bg-indigo-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase z-20 shadow-lg border border-indigo-400 flex items-center gap-1">
-                     📚 {item.series_name} #{item.series_order}
+                     📚 {item.series_name} 제{item.series_order}화
                    </div>
                 )}
 
@@ -520,17 +582,17 @@ export default function FullMainPageFinalV8() {
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-80" />
                   </>
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-300 text-6xl font-black italic">DATA</div>
+                  <div className="w-full h-full flex items-center justify-center text-gray-300 text-6xl font-black italic">기록</div>
                 )}
                 
                 {(item.is_draft || (item.scheduled_at && new Date(item.scheduled_at) > new Date())) && (
                   <div className="absolute top-16 left-6 md:top-20 md:left-8 bg-yellow-400 text-black px-2 py-1 md:px-3 md:py-1 rounded-full text-[8px] md:text-[9px] font-black uppercase z-20">
-                    {item.is_draft ? 'DRAFT' : 'SCHEDULED'}
+                    {item.is_draft ? '작성 중' : '예약됨'}
                   </div>
                 )}
 
                 <div className="absolute inset-0 bg-indigo-600/90 flex flex-col justify-center p-8 md:p-12 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all duration-500 backdrop-blur-sm text-center z-10 hidden md:flex">
-                  <p className="text-white text-[10px] font-black uppercase tracking-widest mb-4">핵심 요약</p>
+                  <p className="text-white text-[10px] font-black uppercase tracking-widest mb-4">내용 요약</p>
                   <p className="text-white text-xl font-bold italic line-clamp-4">{item.content}</p>
                 </div>
 
@@ -546,7 +608,7 @@ export default function FullMainPageFinalV8() {
 
       <footer className="py-20 text-center opacity-30 hover:opacity-100 transition-opacity">
         <p className={`text-[10px] font-black cursor-pointer ${themeText}`} onClick={() => !isAdmin && setShowLogin(true)}>
-          © 2026 INSIGHT.X
+          © 2026 AooW_X
         </p>
       </footer>
 
@@ -554,7 +616,7 @@ export default function FullMainPageFinalV8() {
       {showLogin && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[200] flex items-center justify-center animate-in fade-in p-6">
           <div className={`w-full max-w-sm text-center p-10 md:p-16 border rounded-[3rem] md:rounded-[4rem] shadow-2xl ${isDark ? 'bg-[#222] border-[#333]' : 'bg-white border-gray-100'}`}>
-            <h2 className={`text-2xl md:text-3xl font-black mb-12 italic tracking-tighter ${themeText}`}>운영자 보안 인증</h2>
+            <h2 className={`text-2xl md:text-3xl font-black mb-12 italic tracking-tighter ${themeText}`}>관리자 인증</h2>
             <input 
               type="text" 
               value={email} 
@@ -570,7 +632,7 @@ export default function FullMainPageFinalV8() {
               className={`w-full border-none rounded-2xl py-4 px-6 mb-8 text-center text-lg font-bold outline-none ${isDark ? 'bg-[#333] text-white' : 'bg-gray-50 text-black'}`} 
               placeholder="비밀번호" 
             />
-            <button onClick={handleLogin} className="w-full bg-black text-white py-5 md:py-6 rounded-3xl font-black text-xs uppercase hover:bg-indigo-600 transition-all border border-transparent">인증</button>
+            <button onClick={handleLogin} className="w-full bg-black text-white py-5 md:py-6 rounded-3xl font-black text-xs uppercase hover:bg-indigo-600 transition-all border border-transparent">인증하기</button>
             <button onClick={() => setShowLogin(false)} className={`mt-6 text-[10px] font-bold hover:opacity-100 opacity-50 ${themeText}`}>닫기</button>
           </div>
         </div>
